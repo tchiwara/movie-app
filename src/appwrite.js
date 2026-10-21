@@ -53,3 +53,23 @@ export const updateSearchCount = async (debouncedSearchTerm, movie) => {
         console.error('Failed to update search count:', error.message);
     }
 };
+
+export const getTrendingMovies = async () => {
+    try {
+        // Get the 5 most searched rows, highest count first
+        const result = await tablesDB.listRows({
+            databaseId: DATABASE_ID,
+            tableId: TABLE_ID,
+            queries: [
+                Query.limit(5),
+                Query.orderDesc('count'),
+            ],
+        });
+
+        return result.rows;
+    } catch (error) {
+        console.error('Failed to fetch trending movies:', error.message);
+        // Return an empty list so the UI can still render without trending
+        return [];
+    }
+};
