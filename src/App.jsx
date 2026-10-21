@@ -5,7 +5,6 @@ import MovieCard from "./components/MovieCard.jsx";
 import { useDebounce } from 'react-use';
 import {updateSearchCount, getTrendingMovies} from "./appwrite.js";
 
-
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const API_BASE_URL = 'https://api.themoviedb.org/3';
 
@@ -18,15 +17,15 @@ const API_OPTIONS = {
 };
 
 const App = () => {
-    const [searchTerm, setSearchTerm] = useState('');
+    const[searchTerm, setSearchTerm] = useState('');
     const[debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
 
     const[movieList,setMovieList] = useState([]);
-    const [errorMessage,setErrorMessage] = useState('');
+    const[errorMessage,setErrorMessage] = useState('');
     const[isLoading,setIsLoading] = useState(false);
 
-    const [trendingMovies, setTrendingMovies] = useState([]);
-
+    const[trendingMovies, setTrendingMovies] = useState([]);
+    const[isLoadingTrendingMovies,setIsLoadingTrendingMovies] = useState(false);
 
     useDebounce(() => {
         setDebouncedSearchTerm(searchTerm);
@@ -63,8 +62,13 @@ const App = () => {
     }
 
     const loadTrendingMovies = async () => {
-        const movies = await getTrendingMovies();
-        setTrendingMovies(movies);
+        setIsLoadingTrendingMovies(true);
+        try {
+            const movies = await getTrendingMovies();
+            setTrendingMovies(movies);
+        } finally {
+            setIsLoadingTrendingMovies(false);
+        }
     };
 
     useEffect(() => {
@@ -87,7 +91,9 @@ const App = () => {
                    <Search searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
                </header>
 
-               {trendingMovies.length > 0 && (
+               {isLoadingTrendingMovies ? (
+                   <Spinner />
+               ) : trendingMovies.length > 0 && (
                    <section className="trending">
                        <h2>Trending Movies</h2>
 
@@ -104,7 +110,7 @@ const App = () => {
 
 
                <section className="all-movies">
-                   <h2 className="mt-10">All Movies</h2>
+                   <h2>All Movies</h2>
 
                    {isLoading ? (
                        <Spinner />
