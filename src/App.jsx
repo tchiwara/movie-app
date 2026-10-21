@@ -3,7 +3,8 @@ import {useEffect, useState} from "react";
 import Spinner from "./components/Spinner.jsx";
 import MovieCard from "./components/MovieCard.jsx";
 import { useDebounce } from 'react-use';
-import {updateSearchCount} from "./appwrite.js";
+import {updateSearchCount, getTrendingMovies} from "./appwrite.js";
+
 
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const API_BASE_URL = 'https://api.themoviedb.org/3';
@@ -18,10 +19,14 @@ const API_OPTIONS = {
 
 const App = () => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [errorMessage,setErrorMessage] = useState('');
-    const[movieList,setMovieList] = useState([]);
-    const[isLoading,setIsLoading] = useState(false);
     const[debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+
+    const[movieList,setMovieList] = useState([]);
+    const [errorMessage,setErrorMessage] = useState('');
+    const[isLoading,setIsLoading] = useState(false);
+
+    const [trendingMovies, setTrendingMovies] = useState([]);
+
 
     useDebounce(() => {
         setDebouncedSearchTerm(searchTerm);
@@ -57,10 +62,19 @@ const App = () => {
         }
     }
 
+    const loadTrendingMovies = async () => {
+        const movies = await getTrendingMovies();
+        setTrendingMovies(movies);
+    };
+
     useEffect(() => {
         fetchMovies(debouncedSearchTerm);
 
     }, [debouncedSearchTerm]);
+
+    useEffect(() => {
+        loadTrendingMovies();
+    }, []);
 
     return (
        <main>
@@ -72,6 +86,22 @@ const App = () => {
                    <h1>Find <span className="text-gradient">Movies</span>You'll Enjoy Without The Hassle</h1>
                    <Search searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
                </header>
+
+               {trendingMovies.length > 0 && (
+                   <section className="trending">
+                       <h2>Trending Movies</h2>
+
+                       <ul>
+                           {trendingMovies.map((movie, index) => (
+                               <li key={movie.$id}>
+                                   <p>{index + 1}</p>
+                                   <img src={movie.poster_url} alt={movie.searchTerm} />
+                               </li>
+                           ))}
+                       </ul>
+                   </section>
+               )}
+
 
                <section className="all-movies">
                    <h2 className="mt-10">All Movies</h2>
