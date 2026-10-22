@@ -2,7 +2,9 @@
 
 A React app for discovering movies. Search the TMDB catalog, browse movie cards with ratings, language and release year, and see which movies are trending based on what people search for.
 
-> Based on the [JavaScript Mastery React tutorial](https://www.youtube.com/watch?v=dCLhUialKPQ). See [What I changed from the tutorial](#what-i-changed-from-the-tutorial) for my additions.
+**Live demo:** https://movie-radar-beryl.vercel.app
+
+> Based on the [JavaScript Mastery React tutorial](https://www.youtube.com/watch?v=dCLhUialKPQ). See [what I changed from the tutorial](#what-i-changed-from-the-tutorial) for my additions.
 
 ## Features
 
@@ -73,6 +75,7 @@ When a search returns results, the search term is normalized (trimmed and lowerc
 
 - The TMDB token is used directly from the browser, so it is visible in the network tab. It is a free, read-only token, but the fix is to move the TMDB calls behind a small backend proxy that holds the token.
 - Search counts are written from the browser, so the Appwrite table allows public create, read and update (delete is disabled). Someone with a script could inflate the counts or change a row's poster URL. Moving the counting into the backend would let the table be read-only for the public.
+- The Appwrite Web platform is currently set to a wildcard hostname, so any site could use the project ID from a browser. It should be restricted to the deployed domain.
 
 ## Roadmap
 
@@ -81,7 +84,5 @@ When a search returns results, the search term is normalized (trimmed and lowerc
 - Response caching, rate limiting, and usage metrics on the BFF
 
 ## Credits
-
-Based on the JavaScript Mastery React tutorial.
 
 This product uses the TMDB API but is not endorsed or certified by TMDB.
