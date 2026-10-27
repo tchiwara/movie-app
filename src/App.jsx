@@ -1,79 +1,106 @@
-import Search from "./components/Search.jsx";
-import {useEffect, useState} from "react";
-import Spinner from "./components/Spinner.jsx";
-import MovieCard from "./components/MovieCard.jsx";
-import { useDebounce } from 'react-use';
-import {updateSearchCount, getTrendingMovies} from "./appwrite.js";
 
-const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-const API_BASE_URL = 'https://api.themoviedb.org/3';
+import Search from "./components/Search";
+import Spinner from "./components/Spinner";
+import SlowLoadingMessage from "./components/SlowLoadingMessage";
+import MovieCard from "./components/MovieCard";
 
-const API_OPTIONS = {
-    method: 'GET',
-    headers: {
-        accept: 'application/json',
-        Authorization: `Bearer ${API_KEY}`
-    }
-};
+import { useEffect, useState } from "react";
+import { useDebounce } from "react-use";
 
-const App = () => {
-    const[searchTerm, setSearchTerm] = useState('');
-    const[debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-    const[movieList,setMovieList] = useState([]);
-    const[errorMessage,setErrorMessage] = useState('');
-    const[isLoading,setIsLoading] = useState(false);
+function App() {
+    const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
-    const[trendingMovies, setTrendingMovies] = useState([]);
-    const[isLoadingTrendingMovies,setIsLoadingTrendingMovies] = useState(false);
+    const [movieList, setMovieList] = useState([]);
+    const [trendingMovies, setTrendingMovies] = useState([]);
 
-    useDebounce(() => {
-        setDebouncedSearchTerm(searchTerm);
-    }, 500, [searchTerm]);
+    const [errorMessage, setErrorMessage] = useState("");
+    const [isLoading, setIsLoading] = useState(true);
+    const [isLoadingTrendingMovies, setIsLoadingTrendingMovies] =
+        useState(false);
+    const [showSlowLoadingMessage, setShowSlowLoadingMessage] =
+        useState(false);
 
-    const fetchMovies = async (query='') => {
+    useDebounce(
+        () => setDebouncedSearchTerm(searchTerm),
+        500,
+        [searchTerm]
+    );
+
+    // Show the cold-start message only if loading lasts longer than 5 seconds.
+    useEffect(() => {
+        if (!isLoading) {
+            setShowSlowLoadingMessage(false);
+            return;
+        }
+
+        setShowSlowLoadingMessage(false);
+
+        const timer = setTimeout(() => {
+            setShowSlowLoadingMessage(true);
+        }, 5000);
+
+        return () => clearTimeout(timer);
+    }, [isLoading, debouncedSearchTerm]);
+
+    async function fetchMovies(query = "") {
+        const endpoint = query.trim()
+            ? `${API_BASE_URL}/api/movies?query=${encodeURIComponent(query.trim())}`
+            : `${API_BASE_URL}/api/movies/popular`;
+
         setIsLoading(true);
-        setErrorMessage('');
-        try {
-            const endpoint = query
-                ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
-                : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+        setErrorMessage("");
 
-            const response = await fetch(endpoint, API_OPTIONS);
+        try {
+            const response = await fetch(endpoint);
 
             if (!response.ok) {
-                throw new Error(`Failed to fetch movies: ${response.status} ${response.statusText}`);
+                if (response.status === 429) {
+                    throw new Error(
+                        "Too many requests. Please wait a moment before searching again."
+                    );
+                }
+
+                throw new Error(`Movie request failed (${response.status}).`);
             }
 
             const data = await response.json();
-            setMovieList(data.results||[]);
-
-            if(query && data.results.length > 0) {
-                await updateSearchCount(query, data.results[0]);
-            }
-
-
+            setMovieList(data.movies || []);
         } catch (error) {
-            console.error(`Error fetching movies: ${error}`);
-            setErrorMessage('Failed to fetch movies. Please try again later.');
-        }finally {
+            setErrorMessage(
+                error instanceof TypeError
+                    ? "Unable to reach the movie service. It may be waking up or temporarily unavailable. Please try again shortly."
+                    : error.message
+            );
+        } finally {
             setIsLoading(false);
         }
     }
 
-    const loadTrendingMovies = async () => {
+    async function loadTrendingMovies() {
         setIsLoadingTrendingMovies(true);
+
         try {
-            const movies = await getTrendingMovies();
-            setTrendingMovies(movies);
+            const response = await fetch(`${API_BASE_URL}/api/trending`);
+
+            if (!response.ok) {
+                throw new Error("Unable to load trending movies.");
+            }
+
+            const data = await response.json();
+            setTrendingMovies(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error("Unable to load trending movies:", error);
+            setTrendingMovies([]);
         } finally {
             setIsLoadingTrendingMovies(false);
         }
-    };
+    }
 
     useEffect(() => {
         fetchMovies(debouncedSearchTerm);
-
     }, [debouncedSearchTerm]);
 
     useEffect(() => {
@@ -81,54 +108,74 @@ const App = () => {
     }, []);
 
     return (
-       <main>
-           <div className="pattern" />
+        <main>
+            <div className="pattern" />
 
-           <div className="wrapper">
-               <header>
-                   <img src="./hero.png" alt="Hero Baner" />
-                   <h1>Find <span className="text-gradient">Movies</span>You'll Enjoy Without The Hassle</h1>
-                   <Search searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
-               </header>
+            <div className="wrapper">
+                <header>
+                    <h1>
+                        Find <span className="text-gradient">Movies</span> You'll Love
+                    </h1>
+                </header>
 
-               {isLoadingTrendingMovies ? (
-                   <Spinner />
-               ) : trendingMovies.length > 0 && (
-                   <section className="trending">
-                       <h2>Trending Movies</h2>
+                <Search
+                    searchTerm={searchTerm}
+                    setSearchTerm={setSearchTerm}
+                />
 
-                       <ul>
-                           {trendingMovies.map((movie, index) => (
-                               <li key={movie.$id}>
-                                   <p>{index + 1}</p>
-                                   <img src={movie.poster_url} alt={movie.searchTerm} />
-                               </li>
-                           ))}
-                       </ul>
-                   </section>
-               )}
+                <section className="trending">
+                    <h2>Trending Searches</h2>
 
+                    {isLoadingTrendingMovies ? (
+                        <Spinner />
+                    ) : trendingMovies.length > 0 ? (
+                        <ul>
+                            {trendingMovies.map((movie, index) => (
+                                <li key={movie.movieId ?? movie.searchTerm ?? index}>
+                                    <p>{index + 1}</p>
+                                    <img
+                                        src={movie.posterUrl}
+                                        alt={movie.searchTerm || "Trending movie"}
+                                        loading="lazy"
+                                    />
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p>No trending searches yet.</p>
+                    )}
+                </section>
 
-               <section className="all-movies">
-                   <h2>All Movies</h2>
+                <section className="all-movies">
+                    <h2>All Movies</h2>
 
-                   {isLoading ? (
-                       <Spinner />
-                   ) : errorMessage ? (
-                       <p className="text-red-500">{errorMessage}</p>
-                   ) : (
-                       <ul>
-                           {movieList.map((movie) => (
-                               <MovieCard key={movie.id} movie={movie} />
-                           ))}
-                       </ul>
-                   )}
-               </section>
-           </div>
+                    {isLoading ? (
+                        <div className="movie-loading-container">
+                            <Spinner />
 
-
-       </main>
+                            {showSlowLoadingMessage && (
+                                <SlowLoadingMessage />
+                            )}
+                        </div>
+                    ) : errorMessage ? (
+                        <div className="movie-error-message" role="alert">
+                            <p>{errorMessage}</p>
+                        </div>
+                    ) : movieList.length > 0 ? (
+                        <ul>
+                            {movieList.map((movie) => (
+                                <MovieCard key={movie.id} movie={movie} />
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="empty-movies-message">
+                            No movies found. Try another search.
+                        </p>
+                    )}
+                </section>
+            </div>
+        </main>
     );
-};
+}
 
 export default App;
