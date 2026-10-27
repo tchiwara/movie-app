@@ -1,3 +1,4 @@
+
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap");
 
@@ -138,6 +139,69 @@
 
         & .content .year {
             @apply text-gray-100 font-medium text-base;
+        }
+    }
+
+    /* Movie loading and cold-start message */
+    .movie-loading-container {
+        @apply flex flex-col items-center gap-4 w-full px-4 py-6;
+    }
+
+    .slow-loading-message {
+        width: min(100%, 32rem);
+        padding: 1.25rem 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        text-align: center;
+        animation: loading-message-appear 0.3s ease-out;
+    }
+
+    .slow-loading-message__title {
+        margin-bottom: 0.5rem;
+        color: #e5e7eb;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .slow-loading-message__text {
+        color: #9ca3af;
+        font-size: 0.9rem;
+        line-height: 1.6;
+    }
+
+    .movie-error-message {
+        width: min(100%, 36rem);
+        margin: 1.5rem auto;
+        padding: 1rem 1.25rem;
+        border: 1px solid rgba(248, 113, 113, 0.3);
+        border-radius: 0.75rem;
+        background: rgba(127, 29, 29, 0.15);
+        color: #fca5a5;
+        text-align: center;
+    }
+
+    .empty-movies-message {
+        padding: 2rem 1rem;
+        color: #9ca3af;
+        text-align: center;
+    }
+
+    @keyframes loading-message-appear {
+        from {
+            opacity: 0;
+            transform: translateY(6px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .slow-loading-message {
+            animation: none;
         }
     }
 }
