@@ -9,79 +9,84 @@ A React app for discovering movies. Search the TMDB catalog, browse movie cards 
 ## Features
 
 - Search movies by title with a 500 ms debounce, so a request is only sent after the user stops typing
-- Popular movies shown by default (TMDB `discover` endpoint)
+- Popular movies shown by default
 - Movie cards with poster, rating, original language and release year, with a fallback image when a poster is missing
-- Trending section: the top 5 searched movies, ranked by how many times they were searched
-- Loading spinners for both the movie list and the trending section, and an error message if the request fails
+- Trending section: the top 5 searched movies, ranked by how many times they were searched. It is hidden when there is nothing to show
+- Loading spinners for the movie list and the trending section, and an error message if a request fails
+- Cold-start handling: if the backend takes more than 5 seconds to answer, the app explains that the free hosting is waking up, and retries automatically
 
-## Tech Stack
+## Architecture
+
+The browser talks only to my own backend. TMDB and Appwrite credentials never reach the client.
+
+```text
+Browser (React/Vite, Vercel)
+        |  GET /api/movies, /api/movies/popular, /api/trending
+        v
+Spring Boot BFF (Render)  ---> TMDB API
+                          ---> Appwrite (search counts)
+```
+
+The backend is a separate project: [movie-radar-bff](https://github.com/tchiwara/movie-radar-bff). It validates and rate-limits requests, caches TMDB responses, maps them to the compact shape this UI needs, and records search terms for the trending list. Its README covers the architecture diagrams, API, configuration and deployment in detail.
+
+## Tech stack
 
 - React 19 + Vite
 - Tailwind CSS 4
-- [TMDB API](https://www.themoviedb.org/documentation/api) for movie data
-- [Appwrite](https://appwrite.io) (TablesDB) to store search counts
 - `react-use` for the `useDebounce` hook
+- Backend: Spring Boot BFF (see above), which calls the [TMDB API](https://www.themoviedb.org/documentation/api) and [Appwrite](https://appwrite.io) (TablesDB)
+- Hosting: Vercel (frontend), Render (backend)
 
 ## How trending works
 
-When a search returns results, the search term is normalized (trimmed and lowercased, minimum 3 characters) and looked up in an Appwrite table. If it exists, its `count` goes up by one. If not, a new row is created with the term, the first result's movie id and poster URL, and a count of 1. The trending section reads the 5 rows with the highest `count`.
+When a search returns results, the BFF normalizes the term (trimmed, lowercased, minimum 3 characters) and looks it up in an Appwrite table. If it exists, its count goes up by one. If not, a new row is created with the term, the first result's movie id and poster URL, and a count of 1. The trending section shows the 5 rows with the highest count.
 
 ## What I changed from the tutorial
 
-- Used the current Appwrite `TablesDB` API (`listRows`, `createRow`, `updateRow`) instead of the older `Databases` calls
-- Normalized search terms and skipped very short ones, so "Venom", "venom " and "VENOM" count as one search and half-typed searches are not recorded
-- Added a loading spinner for the trending section, and hid the section when there are no trending movies
-- Moved the Appwrite endpoint into an environment variable, since projects are served from a regional endpoint
-- Locked down the Appwrite table permissions to what the app needs (delete is disabled)
+- Replaced the direct TMDB and Appwrite calls in the browser with my own Spring Boot backend-for-frontend, so no token or API key is shipped to the client
+- Moved search counting and normalization into the backend, with the Appwrite credentials kept server-side
+- Removed the Appwrite SDK and all Appwrite configuration from the frontend
+- Added cold-start handling: a "waking up" message after 5 seconds, and automatic retries (up to 12 attempts, 5 seconds apart) on network errors and 502/503/504 responses, because the free-tier backend sleeps when idle
+- Cancelled stale requests with `AbortController`, so an old or retrying request can never overwrite newer results
+- Added a loading state for the trending section, and hid the section when there are no trending movies
+- Added specific messages for rate limiting (429) and an unreachable service
+- Pinned the dev server to port 5173 (`strictPort`), because the backend's CORS allowlist is an exact match
 
-## Getting Started
+## Getting started
 
 1. Clone the repo and install dependencies:
 
-   ```bash
+```bash
    git clone https://github.com/tchiwara/movie-app.git
    cd movie-app
    npm install
-   ```
+```
 
-2. Copy `.env.example` to `.env.local` and fill in your values:
+2. Run the backend. Either use the deployed one, or run [movie-radar-bff](https://github.com/tchiwara/movie-radar-bff) locally by following its README (that needs your own TMDB token and Appwrite project).
 
-   ```
-   VITE_TMDB_API_KEY=your TMDB API Read Access Token
-   VITE_APPWRITE_PROJECT_ID=
-   VITE_APPWRITE_DATABASE_ID=
-   VITE_APPWRITE_TABLE_ID=
-   VITE_APPWRITE_ENDPOINT=https://<REGION>.cloud.appwrite.io/v1
-   ```
+3. Copy `.env.example` to `.env` and set the backend URL, with no trailing slash:
 
-3. Set up Appwrite: create a database and a table with these columns, using the endpoint shown in your project settings:
+```text
+   VITE_API_BASE_URL=http://localhost:8080
+```
 
-   | Column | Type |
-      | --- | --- |
-   | `searchTerm` | string (size 1000) |
-   | `count` | integer (bigint) |
-   | `movie_id` | integer (bigint) |
-   | `poster_url` | URL |
-
-   Add an index on `count` (descending) so the trending query can sort, and give the table create, read and update permissions. Leave delete off, since the app never deletes rows. Register `localhost` (and your deployed domain) as a Web platform in the project.
+To use the deployed backend instead, set it to `https://movie-radar-bff.onrender.com`. The backend's CORS allowlist must include `http://localhost:5173`.
 
 4. Start the dev server:
 
-   ```bash
+```bash
    npm run dev
-   ```
+```
 
 ## Known limitations
 
-- The TMDB token is used directly from the browser, so it is visible in the network tab. It is a free, read-only token, but the fix is to move the TMDB calls behind a small backend proxy that holds the token.
-- Search counts are written from the browser, so the Appwrite table allows public create, read and update (delete is disabled). Someone with a script could inflate the counts or change a row's poster URL. Moving the counting into the backend would let the table be read-only for the public.
-- The Appwrite Web platform is currently set to a wildcard hostname, so any site could use the project ID from a browser. It should be restricted to the deployed domain.
+- The backend runs on a free instance that sleeps after about 15 minutes without traffic. The first request after a sleep can take around a minute, which is why the app shows a "waking up" message and retries.
+- Trending counts are updated with a read-then-write sequence in the backend, so simultaneous searches for the same term can occasionally lose an increment.
+- There is no pagination: each view shows the first page of results.
 
 ## Roadmap
 
-- Spring Boot backend-for-frontend (BFF) for the TMDB calls, so no token is shipped to the browser
-- Move search counting into the BFF
-- Response caching, rate limiting, and usage metrics on the BFF
+Planned improvements live in the backend's roadmap: moving search counting off the request path, a health endpoint, and CI.
 
 ## Credits
 
