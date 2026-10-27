@@ -1,4 +1,3 @@
-
 import Search from "./components/Search";
 import Spinner from "./components/Spinner";
 import SlowLoadingMessage from "./components/SlowLoadingMessage";
@@ -8,6 +7,50 @@ import { useEffect, useState } from "react";
 import { useDebounce } from "react-use";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+const RETRYABLE_STATUSES = [502, 503, 504];
+const MAX_ATTEMPTS = 12;
+const RETRY_DELAY_MS = 5000;
+
+function sleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, ms);
+        signal.addEventListener(
+            "abort",
+            () => {
+                clearTimeout(timer);
+                reject(new DOMException("Aborted", "AbortError"));
+            },
+            { once: true }
+        );
+    });
+}
+
+// Retries on network errors and 502/503/504 so a sleeping backend has time to wake up.
+async function fetchWithRetry(url, signal) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            const response = await fetch(url, { signal });
+
+            if (
+                !RETRYABLE_STATUSES.includes(response.status) ||
+                attempt >= MAX_ATTEMPTS
+            ) {
+                return response;
+            }
+        } catch (error) {
+            if (
+                error.name === "AbortError" ||
+                !(error instanceof TypeError) ||
+                attempt >= MAX_ATTEMPTS
+            ) {
+                throw error;
+            }
+        }
+
+        await sleep(RETRY_DELAY_MS, signal);
+    }
+}
 
 function App() {
     const [searchTerm, setSearchTerm] = useState("");
@@ -19,7 +62,7 @@ function App() {
     const [errorMessage, setErrorMessage] = useState("");
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingTrendingMovies, setIsLoadingTrendingMovies] =
-        useState(false);
+        useState(true);
     const [showSlowLoadingMessage, setShowSlowLoadingMessage] =
         useState(false);
 
@@ -45,7 +88,7 @@ function App() {
         return () => clearTimeout(timer);
     }, [isLoading, debouncedSearchTerm]);
 
-    async function fetchMovies(query = "") {
+    async function fetchMovies(query = "", signal) {
         const endpoint = query.trim()
             ? `${API_BASE_URL}/api/movies?query=${encodeURIComponent(query.trim())}`
             : `${API_BASE_URL}/api/movies/popular`;
@@ -54,7 +97,7 @@ function App() {
         setErrorMessage("");
 
         try {
-            const response = await fetch(endpoint);
+            const response = await fetchWithRetry(endpoint, signal);
 
             if (!response.ok) {
                 if (response.status === 429) {
@@ -67,44 +110,61 @@ function App() {
             }
 
             const data = await response.json();
+
+            if (signal.aborted) return;
+
             setMovieList(data.movies || []);
         } catch (error) {
+            if (error.name === "AbortError") return;
+
             setErrorMessage(
                 error instanceof TypeError
                     ? "Unable to reach the movie service. It may be waking up or temporarily unavailable. Please try again shortly."
                     : error.message
             );
         } finally {
-            setIsLoading(false);
+            if (!signal.aborted) setIsLoading(false);
         }
     }
 
-    async function loadTrendingMovies() {
+    async function loadTrendingMovies(signal) {
         setIsLoadingTrendingMovies(true);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/trending`);
+            const response = await fetchWithRetry(
+                `${API_BASE_URL}/api/trending`,
+                signal
+            );
 
             if (!response.ok) {
                 throw new Error("Unable to load trending movies.");
             }
 
             const data = await response.json();
+
+            if (signal.aborted) return;
+
             setTrendingMovies(Array.isArray(data) ? data : []);
         } catch (error) {
+            if (error.name === "AbortError") return;
+
             console.error("Unable to load trending movies:", error);
             setTrendingMovies([]);
         } finally {
-            setIsLoadingTrendingMovies(false);
+            if (!signal.aborted) setIsLoadingTrendingMovies(false);
         }
     }
 
     useEffect(() => {
-        fetchMovies(debouncedSearchTerm);
+        const controller = new AbortController();
+        fetchMovies(debouncedSearchTerm, controller.signal);
+        return () => controller.abort();
     }, [debouncedSearchTerm]);
 
     useEffect(() => {
-        loadTrendingMovies();
+        const controller = new AbortController();
+        loadTrendingMovies(controller.signal);
+        return () => controller.abort();
     }, []);
 
     return (
@@ -114,7 +174,7 @@ function App() {
             <div className="wrapper">
                 <header>
                     <h1>
-                        Find <span className="text-gradient">Movies</span> You'll Love
+                        Find <span className="text-gradient">Movies</span> You'll Love Without The Hassle
                     </h1>
                 </header>
 
@@ -123,28 +183,28 @@ function App() {
                     setSearchTerm={setSearchTerm}
                 />
 
-                <section className="trending">
-                    <h2>Trending Searches</h2>
+                {(isLoadingTrendingMovies || trendingMovies.length > 0) && (
+                    <section className="trending">
+                        <h2>Trending Searches</h2>
 
-                    {isLoadingTrendingMovies ? (
-                        <Spinner />
-                    ) : trendingMovies.length > 0 ? (
-                        <ul>
-                            {trendingMovies.map((movie, index) => (
-                                <li key={movie.movieId ?? movie.searchTerm ?? index}>
-                                    <p>{index + 1}</p>
-                                    <img
-                                        src={movie.posterUrl}
-                                        alt={movie.searchTerm || "Trending movie"}
-                                        loading="lazy"
-                                    />
-                                </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <p>No trending searches yet.</p>
-                    )}
-                </section>
+                        {isLoadingTrendingMovies ? (
+                            <Spinner />
+                        ) : (
+                            <ul>
+                                {trendingMovies.map((movie, index) => (
+                                    <li key={movie.movieId ?? movie.searchTerm ?? index}>
+                                        <p>{index + 1}</p>
+                                        <img
+                                            src={movie.posterUrl}
+                                            alt={movie.searchTerm || "Trending movie"}
+                                            loading="lazy"
+                                        />
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+                )}
 
                 <section className="all-movies">
                     <h2>All Movies</h2>
